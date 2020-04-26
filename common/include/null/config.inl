@@ -14,13 +14,61 @@
  */
 
 #include "PS2Eext.h"
-#include <string>
+#if defined(_WIN32)
+#include <windows.h>
+#include "resource.h"
+#elif defined(__unix__)
 
 #include <wx/dialog.h>
 #include <wx/sizer.h>
 #include <wx/checkbox.h>
+#endif
+#include <string>
 
 PluginLog g_plugin_log;
+
+#if defined(_WIN32)
+
+static HINSTANCE s_hinstance;
+
+BOOL APIENTRY DllMain(HINSTANCE hinstance, DWORD reason, LPVOID /* reserved */)
+{
+    if (reason == DLL_PROCESS_ATTACH)
+        s_hinstance = hinstance;
+    return TRUE;
+}
+
+static INT_PTR CALLBACK ConfigureDialogProc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    switch (message) {
+        case WM_INITDIALOG:
+            CheckDlgButton(dialog, IDC_LOG_TO_CONSOLE, g_plugin_log.WriteToConsole);
+            CheckDlgButton(dialog, IDC_LOG_TO_FILE, g_plugin_log.WriteToFile);
+            return TRUE;
+        case WM_COMMAND:
+            switch (LOWORD(wparam)) {
+                case IDOK:
+                    g_plugin_log.WriteToConsole = IsDlgButtonChecked(dialog, IDC_LOG_TO_CONSOLE) == BST_CHECKED;
+                    g_plugin_log.WriteToFile = IsDlgButtonChecked(dialog, IDC_LOG_TO_FILE) == BST_CHECKED;
+                    EndDialog(dialog, 0);
+                    return TRUE;
+                case IDCANCEL:
+                    EndDialog(dialog, 0);
+                    return TRUE;
+                default:
+                    return FALSE;
+            }
+        default:
+            return FALSE;
+    }
+}
+
+void ConfigureLogging()
+{
+    DialogBox(s_hinstance, MAKEINTRESOURCE(IDD_DIALOG), GetActiveWindow(), ConfigureDialogProc);
+}
+
+#elif defined(__unix__)
 
 class nullWxDialog : public wxDialog
 {
@@ -31,6 +79,7 @@ class nullWxDialog : public wxDialog
     public:
         nullWxDialog();
         ~nullWxDialog();
+
 };
 
 nullWxDialog::nullWxDialog() : wxDialog(nullptr, wxID_ANY, "Config", wxDefaultPosition)
@@ -49,6 +98,7 @@ nullWxDialog::nullWxDialog() : wxDialog(nullptr, wxID_ANY, "Config", wxDefaultPo
     SetSizer(sizer);
 }
 
+
 nullWxDialog::~nullWxDialog()
 {
     g_plugin_log.WriteToConsole = console_checkbox->GetValue();
@@ -65,6 +115,14 @@ void ConfigureLogging()
     nullDialog->ShowModal();
     delete nullDialog;
 }
+
+#else
+
+void ConfigureLogging()
+{
+}
+
+#endif
 
 void SaveConfig(const std::string &pathname)
 {
