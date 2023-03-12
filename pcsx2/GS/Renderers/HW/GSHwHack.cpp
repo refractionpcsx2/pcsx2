@@ -1005,7 +1005,7 @@ bool GSHwHack::OI_RozenMaidenGebetGarden(GSRendererHW& r, GSTexture* rt, GSTextu
 			TEX0.TBW = RCONTEXT->FRAME.FBW;
 			TEX0.PSM = RCONTEXT->FRAME.PSM;
 
-			if (GSTextureCache::Target* tmp_rt = r.m_tc->LookupTarget(TEX0, r.GetTargetSize(), GSTextureCache::RenderTarget, true))
+			if (GSTextureCache::Target* tmp_rt = r.m_tc->LookupTarget(TEX0, r.GetTargetSize(), r.GetTextureScaleFactor(), GSTextureCache::RenderTarget, true))
 			{
 				GL_INS("OI_RozenMaidenGebetGarden FB clear");
 				g_gs_device->ClearRenderTarget(tmp_rt->m_texture, 0);
@@ -1023,7 +1023,7 @@ bool GSHwHack::OI_RozenMaidenGebetGarden(GSRendererHW& r, GSTexture* rt, GSTextu
 			TEX0.TBW = RCONTEXT->FRAME.FBW;
 			TEX0.PSM = RCONTEXT->ZBUF.PSM;
 
-			if (GSTextureCache::Target* tmp_ds = r.m_tc->LookupTarget(TEX0, r.GetTargetSize(), GSTextureCache::DepthStencil, true))
+			if (GSTextureCache::Target* tmp_ds = r.m_tc->LookupTarget(TEX0, r.GetTargetSize(), r.GetTextureScaleFactor(), GSTextureCache::DepthStencil, true))
 			{
 				GL_INS("OI_RozenMaidenGebetGarden ZB clear");
 				g_gs_device->ClearDepth(tmp_ds->m_texture);
@@ -1056,10 +1056,23 @@ bool GSHwHack::OI_SonicUnleashed(GSRendererHW& r, GSTexture* rt, GSTexture* ds, 
 
 	GL_INS("OI_SonicUnleashed replace draw by a copy");
 
-	GSTextureCache::Target* src = r.m_tc->LookupTarget(Texture, GSVector2i(1, 1), GSTextureCache::RenderTarget, true);
+	GSTextureCache::Target* src = r.m_tc->LookupTarget(Texture, GSVector2i(1, 1), r.GetTextureScaleFactor(), GSTextureCache::RenderTarget, true);
 
-	const GSVector2i rt_size(rt->GetSize());
 	const GSVector2i src_size(src->m_texture->GetSize());
+	GSVector2i rt_size(rt->GetSize());
+
+	// This is awful, but so is the CRC hack... it's a texture shuffle split horizontally instead of vertically.
+	if (rt_size.x < src_size.x || rt_size.y < src_size.y)
+	{
+		GSTextureCache::Target* rt_again = r.m_tc->LookupTarget(Frame, src_size, src->m_scale, GSTextureCache::RenderTarget, true);
+		if (rt_again->m_unscaled_size.x < src->m_unscaled_size.x || rt_again->m_unscaled_size.y < src->m_unscaled_size.y)
+		{
+			rt_again->ResizeTexture(std::max(rt_again->m_unscaled_size.x, src->m_unscaled_size.x),
+				std::max(rt_again->m_unscaled_size.y, src->m_unscaled_size.y));
+			rt = rt_again->m_texture;
+		}
+	}
+
 	const GSVector2i copy_size(std::min(rt_size.x, src_size.x), std::min(rt_size.y, src_size.y));
 
 	const GSVector4 sRect(0.0f, 0.0f, static_cast<float>(copy_size.x) / static_cast<float>(src_size.x), static_cast<float>(copy_size.y) / static_cast<float>(src_size.y));
@@ -1147,7 +1160,7 @@ bool GSHwHack::GSC_Battlefield2(GSRendererHW& r, const GSFrameInfo& fi, int& ski
 			GIFRegTEX0 TEX0 = {};
 			TEX0.TBP0 = fi.FBP;
 			TEX0.TBW = 8;
-			GSTextureCache::Target* dst = r.m_tc->LookupTarget(TEX0, GSRendererHW::GetInstance()->GetTargetSize(), GSTextureCache::DepthStencil, true);
+			GSTextureCache::Target* dst = r.m_tc->LookupTarget(TEX0, r.GetTargetSize(), r.GetTextureScaleFactor(), GSTextureCache::DepthStencil, true);
 			if (dst)
 			{
 				g_gs_device->ClearDepth(dst->m_texture);
@@ -1285,6 +1298,7 @@ void GSRendererHW::UpdateCRCHacks()
 	const CRCHackLevel real_level = (GSConfig.CRCHack == CRCHackLevel::Automatic) ?
 		GSUtil::GetRecommendedCRCHackLevel(GSConfig.Renderer) : GSConfig.CRCHack;
 
+	m_nativeres = (GSConfig.UpscaleMultiplier == 1.0f);
 	s_nativeres = m_nativeres;
 	s_crc_hack_level = real_level;
 
